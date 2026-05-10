@@ -5,6 +5,7 @@ Python-бот для Discord, который создает приватные �
 ## Возможности
 
 - slash-команда `/ticket-panel` создает панель поддержки и доступна только администраторам;
+- slash-команда `/remnawave-active` показывает активных и онлайн пользователей Remnawave;
 - пользователь нажимает кнопку и получает приватный канал тикета;
 - поддержку автоматически пингует роль из `SUPPORT_ROLE_ID`;
 - у пользователя может быть только один открытый тикет;
@@ -25,6 +26,10 @@ DISCORD_TOKEN=токен_бота
 GUILD_ID=id_сервера
 SUPPORT_ROLE_ID=id_роли_поддержки
 TICKET_CATEGORY_ID=id_категории_тикетов_или_оставь_пустым
+REMNAWAVE_BASE_URL=https://panel.example.com
+REMNAWAVE_API_TOKEN=токен_api_из_remnawave
+REMNAWAVE_CADDY_API_KEY=api_key_caddy_если_используется_или_оставь_пустым
+REMNAWAVE_STATS_PATH=/api/system/stats/recap
 ```
 
 3. Privileged intents в Discord Developer Portal включать не нужно.
@@ -84,6 +89,10 @@ DISCORD_TOKEN=токен_бота
 GUILD_ID=id_сервера
 SUPPORT_ROLE_ID=id_роли_поддержки
 TICKET_CATEGORY_ID=id_категории_тикетов_или_оставь_пустым
+REMNAWAVE_BASE_URL=https://panel.example.com
+REMNAWAVE_API_TOKEN=токен_api_из_remnawave
+REMNAWAVE_CADDY_API_KEY=api_key_caddy_если_используется_или_оставь_пустым
+REMNAWAVE_STATS_PATH=/api/system/stats/recap
 ```
 
 4. Privileged intents в Discord Developer Portal включать не нужно.
@@ -116,3 +125,14 @@ python bot.py
 - роль бота находится выше ролей, с которыми он должен работать;
 - в категории тикетов нет запрета на `Manage Channels` для роли бота;
 - при приглашении бота были выданы нужные permissions.
+
+## Remnawave
+
+Команда `/remnawave-active` доступна только администраторам сервера и отвечает приватно.
+
+Для нее нужны:
+
+- `REMNAWAVE_BASE_URL` — URL панели Remnawave, например `https://panel.example.com`;
+- `REMNAWAVE_API_TOKEN` — API token из Remnawave Settings;
+- `REMNAWAVE_CADDY_API_KEY` — необязательно, если перед Remnawave стоит Caddy Auth;
+- `REMNAWAVE_STATS_PATH` — путь статистики, по умолчанию `/api/system/stats/recap`.

@@ -1,6 +1,9 @@
 import asyncio
+import json
 import os
-from typing import Optional
+import urllib.error
+import urllib.request
+from typing import Any, Optional
 
 import discord
 from discord import app_commands
@@ -15,6 +18,11 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
 SUPPORT_ROLE_ID = int(os.getenv("SUPPORT_ROLE_ID", "0"))
 TICKET_CATEGORY_ID = os.getenv("TICKET_CATEGORY_ID")
+REMNAWAVE_BASE_URL = os.getenv("REMNAWAVE_BASE_URL", "").rstrip("/")
+REMNAWAVE_API_TOKEN = os.getenv("REMNAWAVE_API_TOKEN", "")
+REMNAWAVE_CADDY_API_KEY = os.getenv("REMNAWAVE_CADDY_API_KEY", "")
+REMNAWAVE_STATS_PATH = os.getenv("REMNAWAVE_STATS_PATH", "/api/system/stats/recap")
+REMNAWAVE_REQUEST_TIMEOUT = float(os.getenv("REMNAWAVE_REQUEST_TIMEOUT", "15"))
 
 
 intents = discord.Intents.default()
@@ -53,6 +61,166 @@ async def find_existing_ticket(guild: discord.Guild, user: discord.Member) -> Op
             return channel
 
     return None
+
+
+def normalize_key(value: str) -> str:
+    return "".join(character for character in value.lower() if character.isalnum())
+
+
+def find_value(payload: Any, names: set[str]) -> Any:
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            if normalize_key(str(key)) in names:
+                return value
+
+        for value in payload.values():
+            found = find_value(value, names)
+            if found is not None:
+                return found
+
+    if isinstance(payload, list):
+        for value in payload:
+            found = find_value(value, names)
+            if found is not None:
+                return found
+
+    return None
+
+
+def find_path(payload: Any, path: tuple[str, ...]) -> Any:
+    current = payload
+    for key in path:
+        if not isinstance(current, dict):
+            return None
+
+        normalized_key = normalize_key(key)
+        matching_key = next(
+            (
+                item_key
+                for item_key in current
+                if normalize_key(str(item_key)) == normalized_key
+            ),
+            None,
+        )
+        if matching_key is None:
+            return None
+
+        current = current[matching_key]
+
+    return current
+
+
+def first_available(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+
+    return None
+
+
+def format_stat(value: Any) -> str:
+    if isinstance(value, (int, float)):
+        return f"{value:,.0f}".replace(",", " ")
+
+    if isinstance(value, str) and value.strip():
+        return value
+
+    return "нет данных"
+
+
+def remnawave_request_json(path: str) -> dict[str, Any]:
+    if not REMNAWAVE_BASE_URL or not REMNAWAVE_API_TOKEN:
+        raise RuntimeError(
+            "REMNAWAVE_BASE_URL and REMNAWAVE_API_TOKEN must be configured."
+        )
+
+    if not path.startswith("/"):
+        path = f"/{path}"
+
+    request = urllib.request.Request(
+        f"{REMNAWAVE_BASE_URL}{path}",
+        headers={
+            "Accept": "application/json",
+            "Authorization": f"Bearer {REMNAWAVE_API_TOKEN}",
+        },
+        method="GET",
+    )
+    if REMNAWAVE_CADDY_API_KEY:
+        request.add_header("X-Api-Key", REMNAWAVE_CADDY_API_KEY)
+
+    with urllib.request.urlopen(request, timeout=REMNAWAVE_REQUEST_TIMEOUT) as response:
+        response_body = response.read().decode("utf-8")
+
+    payload = json.loads(response_body)
+    if not isinstance(payload, dict):
+        raise RuntimeError("Remnawave returned an unexpected response format.")
+
+    return payload
+
+
+async def fetch_remnawave_stats() -> dict[str, Any]:
+    try:
+        return await asyncio.to_thread(remnawave_request_json, REMNAWAVE_STATS_PATH)
+    except urllib.error.HTTPError as error:
+        if error.code != 404 or REMNAWAVE_STATS_PATH == "/api/system/stats":
+            raise
+
+    return await asyncio.to_thread(remnawave_request_json, "/api/system/stats")
+
+
+def build_remnawave_embed(stats: dict[str, Any]) -> discord.Embed:
+    online_now = first_available(
+        find_path(stats, ("online", "total")),
+        find_path(stats, ("onlineStats", "onlineNow")),
+        find_value(stats, {"onlinenow", "onlineusers", "uniqueonlineusers", "totalonline"}),
+    )
+    last_day = first_available(
+        find_path(stats, ("onlineStats", "lastDay")),
+        find_value(stats, {"lastday", "onlinelastday"}),
+    )
+    last_week = first_available(
+        find_path(stats, ("onlineStats", "lastWeek")),
+        find_value(stats, {"lastweek", "onlinelastweek"}),
+    )
+    never_online = first_available(
+        find_path(stats, ("onlineStats", "neverOnline")),
+        find_value(stats, {"neveronline", "neveronlineusers"}),
+    )
+    active_users = first_available(
+        find_path(stats, ("users", "statusCounts", "active")),
+        find_path(stats, ("users", "status", "active")),
+        find_path(stats, ("users", "statuses", "active")),
+        find_path(stats, ("users", "active")),
+    )
+    total_users = first_available(
+        find_path(stats, ("users", "total")),
+        find_value(stats, {"totalusers", "userscount"}),
+    )
+    total_online_on_nodes = find_value(
+        stats,
+        {"totalonlineonnodes", "nodesonlineusers", "onlineonnodes"},
+    )
+
+    embed = discord.Embed(
+        title="Remnawave: активные пользователи",
+        color=discord.Color.teal(),
+    )
+    embed.add_field(name="Онлайн сейчас", value=format_stat(online_now), inline=True)
+    embed.add_field(name="Активные", value=format_stat(active_users), inline=True)
+    embed.add_field(name="Всего пользователей", value=format_stat(total_users), inline=True)
+    embed.add_field(name="За 24 часа", value=format_stat(last_day), inline=True)
+    embed.add_field(name="За неделю", value=format_stat(last_week), inline=True)
+    embed.add_field(name="Никогда онлайн", value=format_stat(never_online), inline=True)
+
+    if total_online_on_nodes is not None:
+        embed.add_field(
+            name="Подключений на нодах",
+            value=format_stat(total_online_on_nodes),
+            inline=True,
+        )
+
+    embed.set_footer(text="Данные Remnawave могут обновляться с задержкой до 1 минуты.")
+    return embed
 
 
 class TicketCreateView(discord.ui.View):
@@ -243,6 +411,65 @@ async def ticket_panel(interaction: discord.Interaction) -> None:
 
 @ticket_panel.error
 async def ticket_panel_error(
+    interaction: discord.Interaction,
+    error: app_commands.AppCommandError,
+) -> None:
+    if isinstance(error, app_commands.MissingPermissions):
+        await interaction.response.send_message(
+            "Эту команду может использовать только администратор.",
+            ephemeral=True,
+        )
+        return
+
+    raise error
+
+
+@bot.tree.command(
+    name="remnawave-active",
+    description="Показать активных и онлайн пользователей Remnawave.",
+    guild=discord.Object(id=GUILD_ID),
+)
+@app_commands.default_permissions(administrator=True)
+@app_commands.checks.has_permissions(administrator=True)
+async def remnawave_active(interaction: discord.Interaction) -> None:
+    if not REMNAWAVE_BASE_URL or not REMNAWAVE_API_TOKEN:
+        await interaction.response.send_message(
+            (
+                "Remnawave не настроен. Заполни `REMNAWAVE_BASE_URL`"
+                " и `REMNAWAVE_API_TOKEN` в `.env`."
+            ),
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True, thinking=True)
+
+    try:
+        stats = await fetch_remnawave_stats()
+    except urllib.error.HTTPError as error:
+        await interaction.followup.send(
+            f"Remnawave вернул HTTP {error.code}. Проверь URL, токен и права API.",
+            ephemeral=True,
+        )
+        return
+    except urllib.error.URLError as error:
+        await interaction.followup.send(
+            f"Не удалось подключиться к Remnawave: `{error.reason}`",
+            ephemeral=True,
+        )
+        return
+    except (json.JSONDecodeError, RuntimeError) as error:
+        await interaction.followup.send(
+            f"Не удалось прочитать ответ Remnawave: `{error}`",
+            ephemeral=True,
+        )
+        return
+
+    await interaction.followup.send(embed=build_remnawave_embed(stats), ephemeral=True)
+
+
+@remnawave_active.error
+async def remnawave_active_error(
     interaction: discord.Interaction,
     error: app_commands.AppCommandError,
 ) -> None:
