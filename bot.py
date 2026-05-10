@@ -593,6 +593,14 @@ def build_subscription_contacts_embed() -> discord.Embed:
     return embed
 
 
+def build_ticket_panel_embed() -> discord.Embed:
+    return discord.Embed(
+        title="Поддержка",
+        description="Нажми кнопку ниже, чтобы создать приватный тикет для связи с поддержкой.",
+        color=EMBED_ACCENT_COLOR,
+    )
+
+
 def build_remnawave_embed(
     stats: dict[str, Any],
     nodes: Optional[list[dict[str, Any]]] = None,
@@ -986,14 +994,10 @@ async def ticket_panel(interaction: discord.Interaction) -> None:
         )
         return
 
-    embed = discord.Embed(
-        title="Поддержка",
-        description="Нажми кнопку ниже, чтобы создать приватный тикет для связи с поддержкой.",
-        color=EMBED_ACCENT_COLOR,
-    )
-    await interaction.channel.send(embed=embed, view=TicketCreateView())
+    await interaction.channel.send(embed=build_ticket_panel_embed(), view=TicketCreateView())
+    await interaction.channel.send(embed=build_subscription_contacts_embed())
     await interaction.response.send_message(
-        "Панель тикетов отправлена.",
+        "Панель тикетов и контакты покупки отправлены.",
         ephemeral=True,
     )
 
