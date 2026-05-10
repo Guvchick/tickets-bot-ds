@@ -30,6 +30,7 @@ REMNAWAVE_BASE_URL = os.getenv("REMNAWAVE_BASE_URL", "").rstrip("/")
 REMNAWAVE_API_TOKEN = os.getenv("REMNAWAVE_API_TOKEN", "")
 REMNAWAVE_CADDY_API_KEY = os.getenv("REMNAWAVE_CADDY_API_KEY", "")
 REMNAWAVE_STATS_PATH = os.getenv("REMNAWAVE_STATS_PATH", "/api/system/stats/recap")
+REMNAWAVE_NODES_PATH = os.getenv("REMNAWAVE_NODES_PATH", "/api/nodes")
 REMNAWAVE_REQUEST_TIMEOUT = float(os.getenv("REMNAWAVE_REQUEST_TIMEOUT", "15"))
 REMNAWAVE_X_FORWARDED_FOR = os.getenv("REMNAWAVE_X_FORWARDED_FOR", "127.0.0.1")
 REMNAWAVE_X_FORWARDED_PROTO = os.getenv("REMNAWAVE_X_FORWARDED_PROTO", "https")
@@ -271,6 +272,22 @@ def unwrap_remnawave_response(payload: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
+def unwrap_remnawave_list_response(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    response = payload.get("response")
+    if isinstance(response, list):
+        logger.info(
+            "Remnawave response list length: %s",
+            len(response),
+        )
+        return [item for item in response if isinstance(item, dict)]
+
+    if isinstance(response, dict):
+        logger.info("Remnawave response payload keys: %s", sorted(response.keys()))
+        return list_from_payload(response)
+
+    return list_from_payload(payload)
+
+
 async def fetch_remnawave_stats() -> dict[str, Any]:
     try:
         payload = await asyncio.to_thread(remnawave_request_json, REMNAWAVE_STATS_PATH)
@@ -281,6 +298,25 @@ async def fetch_remnawave_stats() -> dict[str, Any]:
         payload = await asyncio.to_thread(remnawave_request_json, "/api/system/stats")
 
     return unwrap_remnawave_response(payload)
+
+
+async def fetch_remnawave_nodes() -> list[dict[str, Any]]:
+    payload = await asyncio.to_thread(remnawave_request_json, REMNAWAVE_NODES_PATH)
+    nodes = unwrap_remnawave_list_response(payload)
+    if nodes:
+        logger.info("Remnawave first node keys: %s", sorted(nodes[0].keys()))
+    else:
+        logger.warning("Remnawave nodes response did not contain node items")
+
+    return nodes
+
+
+async def fetch_remnawave_dashboard_data() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    stats, nodes = await asyncio.gather(
+        fetch_remnawave_stats(),
+        fetch_remnawave_nodes(),
+    )
+    return stats, nodes
 
 
 def format_http_error(error: urllib.error.HTTPError) -> str:
@@ -407,8 +443,13 @@ def get_online_node_rows(nodes: list[dict[str, Any]]) -> list[tuple[float, str]]
     return rows
 
 
-def build_remnawave_panel_embed(stats: dict[str, Any]) -> discord.Embed:
-    nodes = extract_nodes(stats)
+def build_remnawave_panel_embed(
+    stats: dict[str, Any],
+    nodes: Optional[list[dict[str, Any]]] = None,
+) -> discord.Embed:
+    if nodes is None:
+        nodes = extract_nodes(stats)
+
     node_rows = get_online_node_rows(nodes)
     online_now = sum(online_users for online_users, _name in node_rows)
     active_users = first_available(
@@ -416,10 +457,16 @@ def build_remnawave_panel_embed(stats: dict[str, Any]) -> discord.Embed:
         find_path(stats, ("users", "status", "active")),
         find_path(stats, ("users", "statuses", "active")),
         find_path(stats, ("users", "active")),
+        find_path(stats, ("total", "users")),
     )
     total_users = first_available(
         find_path(stats, ("users", "total")),
+        find_path(stats, ("total", "users")),
         find_value(stats, {"totalusers", "userscount"}),
+    )
+    total_nodes = first_available(
+        len(nodes) if nodes else None,
+        find_path(stats, ("total", "nodes")),
     )
 
     embed = discord.Embed(
@@ -429,6 +476,7 @@ def build_remnawave_panel_embed(stats: dict[str, Any]) -> discord.Embed:
     )
     embed.add_field(name="Онлайн на нодах", value=format_stat(online_now), inline=True)
     embed.add_field(name="Активные пользователи", value=format_stat(active_users), inline=True)
+    embed.add_field(name="Нод", value=format_stat(total_nodes), inline=True)
     embed.add_field(name="Всего пользователей", value=format_stat(total_users), inline=True)
 
     if node_rows:
@@ -455,8 +503,13 @@ def build_remnawave_panel_embed(stats: dict[str, Any]) -> discord.Embed:
     return embed
 
 
-def build_remnawave_embed(stats: dict[str, Any]) -> discord.Embed:
-    nodes = extract_nodes(stats)
+def build_remnawave_embed(
+    stats: dict[str, Any],
+    nodes: Optional[list[dict[str, Any]]] = None,
+) -> discord.Embed:
+    if nodes is None:
+        nodes = extract_nodes(stats)
+
     node_online_total = sum(
         online_users
         for online_users in (node_online_users(node) for node in nodes)
@@ -703,8 +756,8 @@ async def update_remnawave_panel_once() -> bool:
             return False
 
     try:
-        stats = await fetch_remnawave_stats()
-        embed = build_remnawave_panel_embed(stats)
+        stats, nodes = await fetch_remnawave_dashboard_data()
+        embed = build_remnawave_panel_embed(stats, nodes)
         if message is None:
             message = await channel.send(embed=embed)
             remnawave_panel_message_id = message.id
@@ -860,7 +913,7 @@ async def remnawave_active(interaction: discord.Interaction) -> None:
     await interaction.response.defer(ephemeral=True, thinking=True)
 
     try:
-        stats = await fetch_remnawave_stats()
+        stats, nodes = await fetch_remnawave_dashboard_data()
     except urllib.error.HTTPError as error:
         await interaction.followup.send(
             format_http_error(error),
@@ -880,7 +933,7 @@ async def remnawave_active(interaction: discord.Interaction) -> None:
         )
         return
 
-    await interaction.followup.send(embed=build_remnawave_embed(stats), ephemeral=True)
+    await interaction.followup.send(embed=build_remnawave_embed(stats, nodes), ephemeral=True)
 
 
 @remnawave_active.error
@@ -928,7 +981,7 @@ async def remnawave_panel(interaction: discord.Interaction) -> None:
     await interaction.response.defer(ephemeral=True, thinking=True)
 
     try:
-        stats = await fetch_remnawave_stats()
+        stats, nodes = await fetch_remnawave_dashboard_data()
     except urllib.error.HTTPError as error:
         await interaction.followup.send(format_http_error(error), ephemeral=True)
         return
@@ -945,7 +998,7 @@ async def remnawave_panel(interaction: discord.Interaction) -> None:
         )
         return
 
-    message = await interaction.channel.send(embed=build_remnawave_panel_embed(stats))
+    message = await interaction.channel.send(embed=build_remnawave_panel_embed(stats, nodes))
     remnawave_panel_channel_id = message.channel.id
     remnawave_panel_message_id = message.id
     ensure_remnawave_panel_task()

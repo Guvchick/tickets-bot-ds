@@ -33,6 +33,7 @@ REMNAWAVE_BASE_URL=https://panel.example.com
 REMNAWAVE_API_TOKEN=токен_api_из_remnawave
 REMNAWAVE_CADDY_API_KEY=api_key_caddy_если_используется_или_оставь_пустым
 REMNAWAVE_STATS_PATH=/api/system/stats/recap
+REMNAWAVE_NODES_PATH=/api/nodes
 REMNAWAVE_X_FORWARDED_FOR=127.0.0.1
 REMNAWAVE_X_FORWARDED_PROTO=https
 REMNAWAVE_USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36
@@ -111,6 +112,7 @@ REMNAWAVE_BASE_URL=https://panel.example.com
 REMNAWAVE_API_TOKEN=токен_api_из_remnawave
 REMNAWAVE_CADDY_API_KEY=api_key_caddy_если_используется_или_оставь_пустым
 REMNAWAVE_STATS_PATH=/api/system/stats/recap
+REMNAWAVE_NODES_PATH=/api/nodes
 REMNAWAVE_X_FORWARDED_FOR=127.0.0.1
 REMNAWAVE_X_FORWARDED_PROTO=https
 REMNAWAVE_USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36
@@ -163,6 +165,7 @@ python bot.py
 - `REMNAWAVE_API_TOKEN` — API token из Remnawave Settings;
 - `REMNAWAVE_CADDY_API_KEY` — необязательно, если перед Remnawave стоит Caddy Auth;
 - `REMNAWAVE_STATS_PATH` — путь статистики, по умолчанию `/api/system/stats/recap`.
+- `REMNAWAVE_NODES_PATH` — путь списка нод, по умолчанию `/api/nodes`; используется для топа нод по онлайну.
 - `REMNAWAVE_X_FORWARDED_FOR` и `REMNAWAVE_X_FORWARDED_PROTO` — заголовки для прокси Remnawave, обычно можно оставить `127.0.0.1` и `https`.
 - `REMNAWAVE_USER_AGENT` — браузерный User-Agent для Cloudflare, чтобы API-запросы не выглядели как стандартный `Python-urllib`.
 - `REMNAWAVE_PANEL_CHANNEL_ID` и `REMNAWAVE_PANEL_MESSAGE_ID` — ID канала и сообщения панели для автообновления после перезапуска бота. Если указан только канал, бот создаст новую панель сам и напишет ID сообщения в логи.
