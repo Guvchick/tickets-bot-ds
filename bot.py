@@ -43,6 +43,7 @@ REMNAWAVE_USER_AGENT = os.getenv(
 )
 REMNAWAVE_PANEL_CHANNEL_ID = int(os.getenv("REMNAWAVE_PANEL_CHANNEL_ID", "0") or "0")
 REMNAWAVE_PANEL_MESSAGE_ID = int(os.getenv("REMNAWAVE_PANEL_MESSAGE_ID", "0") or "0")
+REMNAWAVE_CONTACTS_MESSAGE_ID = int(os.getenv("REMNAWAVE_CONTACTS_MESSAGE_ID", "0") or "0")
 REMNAWAVE_PANEL_REFRESH_SECONDS = max(
     30,
     int(os.getenv("REMNAWAVE_PANEL_REFRESH_SECONDS", "60")),
@@ -54,6 +55,7 @@ REMNAWAVE_PANEL_TOP_LIMIT = max(
 COMMAND_SYNC_TIMEOUT = float(os.getenv("COMMAND_SYNC_TIMEOUT", "60"))
 remnawave_panel_channel_id = REMNAWAVE_PANEL_CHANNEL_ID
 remnawave_panel_message_id = REMNAWAVE_PANEL_MESSAGE_ID
+remnawave_contacts_message_id = REMNAWAVE_CONTACTS_MESSAGE_ID
 remnawave_panel_task: Optional[asyncio.Task[None]] = None
 
 
@@ -566,6 +568,28 @@ def build_remnawave_panel_embed(
     return embed
 
 
+def build_subscription_contacts_embed() -> discord.Embed:
+    embed = discord.Embed(
+        title="🌼 Купить подписку Elix VPN",
+        description=(
+            "Оформи подписку удобным способом и управляй доступом в личном кабинете."
+        ),
+        color=discord.Color.gold(),
+    )
+    embed.add_field(
+        name="Telegram-бот",
+        value="[@elix_vpn_robot](https://t.me/elix_vpn_robot)",
+        inline=True,
+    )
+    embed.add_field(
+        name="Веб-кабинет",
+        value="[cabinet.elix.ink](https://cabinet.elix.ink/login)",
+        inline=True,
+    )
+    embed.set_footer(text="После покупки подписка появится в личном кабинете.")
+    return embed
+
+
 def build_remnawave_embed(
     stats: dict[str, Any],
     nodes: Optional[list[dict[str, Any]]] = None,
@@ -782,7 +806,7 @@ class TicketCloseView(discord.ui.View):
 
 
 async def update_remnawave_panel_once() -> bool:
-    global remnawave_panel_message_id
+    global remnawave_panel_message_id, remnawave_contacts_message_id
 
     if not remnawave_panel_channel_id:
         return False
@@ -806,6 +830,7 @@ async def update_remnawave_panel_once() -> bool:
         return False
 
     message = None
+    contacts_message = None
     if remnawave_panel_message_id and hasattr(channel, "fetch_message"):
         try:
             message = await channel.fetch_message(remnawave_panel_message_id)
@@ -818,9 +843,25 @@ async def update_remnawave_panel_once() -> bool:
             logger.exception("Failed to fetch Remnawave panel message %s", remnawave_panel_message_id)
             return False
 
+    if remnawave_contacts_message_id and hasattr(channel, "fetch_message"):
+        try:
+            contacts_message = await channel.fetch_message(remnawave_contacts_message_id)
+        except discord.NotFound:
+            logger.warning(
+                "Remnawave contacts message %s was not found; creating a new one",
+                remnawave_contacts_message_id,
+            )
+        except discord.HTTPException:
+            logger.exception(
+                "Failed to fetch Remnawave contacts message %s",
+                remnawave_contacts_message_id,
+            )
+            return False
+
     try:
         stats, nodes = await fetch_remnawave_dashboard_data()
         embed = build_remnawave_panel_embed(stats, nodes)
+        contacts_embed = build_subscription_contacts_embed()
         if message is None:
             message = await channel.send(embed=embed)
             remnawave_panel_message_id = message.id
@@ -832,10 +873,24 @@ async def update_remnawave_panel_once() -> bool:
             )
         else:
             await message.edit(embed=embed, view=None)
+
+        if contacts_message is None:
+            contacts_message = await channel.send(embed=contacts_embed)
+            remnawave_contacts_message_id = contacts_message.id
+            logger.info(
+                "Remnawave contacts panel created: channel=%s message=%s. Add REMNAWAVE_CONTACTS_MESSAGE_ID=%s to .env",
+                remnawave_panel_channel_id,
+                remnawave_contacts_message_id,
+                remnawave_contacts_message_id,
+            )
+        else:
+            await contacts_message.edit(embed=contacts_embed, view=None)
+
         logger.info(
-            "Remnawave panel updated: channel=%s message=%s",
+            "Remnawave panel updated: channel=%s message=%s contacts_message=%s",
             remnawave_panel_channel_id,
             remnawave_panel_message_id,
+            remnawave_contacts_message_id,
         )
     except Exception:
         logger.exception("Failed to update Remnawave panel")
@@ -1022,7 +1077,7 @@ async def remnawave_active_error(
 @app_commands.default_permissions(administrator=True)
 @app_commands.checks.has_permissions(administrator=True)
 async def remnawave_panel(interaction: discord.Interaction) -> None:
-    global remnawave_panel_channel_id, remnawave_panel_message_id
+    global remnawave_panel_channel_id, remnawave_panel_message_id, remnawave_contacts_message_id
 
     if not REMNAWAVE_BASE_URL or not REMNAWAVE_API_TOKEN:
         await interaction.response.send_message(
@@ -1061,17 +1116,20 @@ async def remnawave_panel(interaction: discord.Interaction) -> None:
         )
         return
 
-    message = await interaction.channel.send(embed=build_remnawave_panel_embed(stats, nodes))
-    remnawave_panel_channel_id = message.channel.id
-    remnawave_panel_message_id = message.id
+    panel_message = await interaction.channel.send(embed=build_remnawave_panel_embed(stats, nodes))
+    contacts_message = await interaction.channel.send(embed=build_subscription_contacts_embed())
+    remnawave_panel_channel_id = panel_message.channel.id
+    remnawave_panel_message_id = panel_message.id
+    remnawave_contacts_message_id = contacts_message.id
     ensure_remnawave_panel_task()
 
     await interaction.followup.send(
         (
-            "Панель Remnawave отправлена и будет обновляться.\n"
+            "Панель Remnawave и контакты покупки отправлены.\n"
             "Чтобы она продолжила обновляться после перезапуска бота, добавь в `.env`:\n"
-            f"`REMNAWAVE_PANEL_CHANNEL_ID={message.channel.id}`\n"
-            f"`REMNAWAVE_PANEL_MESSAGE_ID={message.id}`"
+            f"`REMNAWAVE_PANEL_CHANNEL_ID={panel_message.channel.id}`\n"
+            f"`REMNAWAVE_PANEL_MESSAGE_ID={panel_message.id}`\n"
+            f"`REMNAWAVE_CONTACTS_MESSAGE_ID={contacts_message.id}`"
         ),
         ephemeral=True,
     )

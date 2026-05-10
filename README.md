@@ -39,6 +39,7 @@ REMNAWAVE_X_FORWARDED_PROTO=https
 REMNAWAVE_USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36
 REMNAWAVE_PANEL_CHANNEL_ID=
 REMNAWAVE_PANEL_MESSAGE_ID=
+REMNAWAVE_CONTACTS_MESSAGE_ID=
 REMNAWAVE_PANEL_REFRESH_SECONDS=60
 REMNAWAVE_PANEL_TOP_LIMIT=10
 ```
@@ -118,6 +119,7 @@ REMNAWAVE_X_FORWARDED_PROTO=https
 REMNAWAVE_USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36
 REMNAWAVE_PANEL_CHANNEL_ID=
 REMNAWAVE_PANEL_MESSAGE_ID=
+REMNAWAVE_CONTACTS_MESSAGE_ID=
 REMNAWAVE_PANEL_REFRESH_SECONDS=60
 REMNAWAVE_PANEL_TOP_LIMIT=10
 ```
@@ -156,7 +158,7 @@ python bot.py
 ## Remnawave
 
 Команда `/remnawave-active` доступна только администраторам сервера и отвечает приватно.
-Команда `/remnawave-panel` отправляет постоянную публичную панель в канал и обновляет ее по таймеру.
+Команда `/remnawave-panel` отправляет постоянную публичную панель в канал, а вторым сообщением — контакты для покупки подписки.
 Подробности подключения к Remnawave пишутся в логи бота без вывода токенов.
 
 Для нее нужны:
@@ -168,10 +170,10 @@ python bot.py
 - `REMNAWAVE_NODES_PATH` — путь списка серверов, по умолчанию `/api/nodes`; используется для списка серверов онлайн.
 - `REMNAWAVE_X_FORWARDED_FOR` и `REMNAWAVE_X_FORWARDED_PROTO` — заголовки для прокси Remnawave, обычно можно оставить `127.0.0.1` и `https`.
 - `REMNAWAVE_USER_AGENT` — браузерный User-Agent для Cloudflare, чтобы API-запросы не выглядели как стандартный `Python-urllib`.
-- `REMNAWAVE_PANEL_CHANNEL_ID` и `REMNAWAVE_PANEL_MESSAGE_ID` — ID канала и сообщения панели для автообновления после перезапуска бота. Если указан только канал, бот создаст новую панель сам и напишет ID сообщения в логи.
+- `REMNAWAVE_PANEL_CHANNEL_ID`, `REMNAWAVE_PANEL_MESSAGE_ID` и `REMNAWAVE_CONTACTS_MESSAGE_ID` — ID канала, онлайн-панели и сообщения с контактами для восстановления после перезапуска бота. Если указан только канал, бот создаст сообщения сам и напишет ID в логи.
 - `REMNAWAVE_PANEL_REFRESH_SECONDS` — интервал обновления панели, минимум 30 секунд.
 - `REMNAWAVE_PANEL_TOP_LIMIT` — оставлено для совместимости; панель показывает полный список серверов, где онлайн больше 0.
 - `LOG_LEVEL` — уровень логов, обычно `INFO`; для более подробной диагностики можно поставить `DEBUG`.
 - `COMMAND_SYNC_TIMEOUT` — сколько секунд ждать синхронизацию slash-команд с Discord.
 
-Чтобы создать постоянную панель, вызови `/remnawave-panel` в нужном канале. Бот отправит сообщение и в приватном ответе покажет `REMNAWAVE_PANEL_CHANNEL_ID` и `REMNAWAVE_PANEL_MESSAGE_ID`; добавь их в `.env`, чтобы бот редактировал эту же панель после перезапуска контейнера.
+Чтобы создать постоянную панель, вызови `/remnawave-panel` в нужном канале. Бот отправит онлайн-панель и второе сообщение с контактами: Telegram-бот `@elix_vpn_robot` и веб-кабинет `https://cabinet.elix.ink/login`. В приватном ответе он покажет `REMNAWAVE_PANEL_CHANNEL_ID`, `REMNAWAVE_PANEL_MESSAGE_ID` и `REMNAWAVE_CONTACTS_MESSAGE_ID`; добавь их в `.env`, чтобы бот редактировал эти же сообщения после перезапуска контейнера.
