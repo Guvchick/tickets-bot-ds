@@ -27,6 +27,9 @@ DISCORD_TOKEN=токен_бота
 GUILD_ID=id_сервера
 SUPPORT_ROLE_ID=id_роли_поддержки
 TICKET_CATEGORY_ID=id_категории_тикетов_или_оставь_пустым
+TICKET_PANEL_CHANNEL_ID=
+TICKET_PANEL_MESSAGE_ID=
+TICKET_CONTACTS_MESSAGE_ID=
 LOG_LEVEL=INFO
 COMMAND_SYNC_TIMEOUT=60
 REMNAWAVE_BASE_URL=https://panel.example.com
@@ -87,6 +90,14 @@ docker compose down
 
 Команда сразу отправит два сообщения: панель поддержки с кнопкой тикета и контакты покупки подписки.
 
+Чтобы панель поддержки создавалась сама после запуска бота, добавь в `.env`:
+
+```env
+TICKET_PANEL_CHANNEL_ID=id_канала_для_панели
+```
+
+После первого запуска бот напишет в логи `TICKET_PANEL_MESSAGE_ID` и `TICKET_CONTACTS_MESSAGE_ID`; добавь их в `.env`, чтобы после перезапуска бот редактировал эти же сообщения, а не создавал новые.
+
 ## Локальная установка без Docker
 
 1. Создай виртуальное окружение и установи зависимости:
@@ -110,6 +121,9 @@ DISCORD_TOKEN=токен_бота
 GUILD_ID=id_сервера
 SUPPORT_ROLE_ID=id_роли_поддержки
 TICKET_CATEGORY_ID=id_категории_тикетов_или_оставь_пустым
+TICKET_PANEL_CHANNEL_ID=
+TICKET_PANEL_MESSAGE_ID=
+TICKET_CONTACTS_MESSAGE_ID=
 LOG_LEVEL=INFO
 COMMAND_SYNC_TIMEOUT=60
 REMNAWAVE_BASE_URL=https://panel.example.com
@@ -143,6 +157,14 @@ python bot.py
 ```
 
 Команда сразу отправит два сообщения: панель поддержки с кнопкой тикета и контакты покупки подписки.
+
+Чтобы панель поддержки создавалась сама после запуска бота, добавь в `.env`:
+
+```env
+TICKET_PANEL_CHANNEL_ID=id_канала_для_панели
+```
+
+После первого запуска бот напишет в логи `TICKET_PANEL_MESSAGE_ID` и `TICKET_CONTACTS_MESSAGE_ID`; добавь их в `.env`, чтобы после перезапуска бот редактировал эти же сообщения, а не создавал новые.
 
 ## Права бота
 

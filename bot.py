@@ -29,6 +29,9 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
 SUPPORT_ROLE_ID = int(os.getenv("SUPPORT_ROLE_ID", "0"))
 TICKET_CATEGORY_ID = os.getenv("TICKET_CATEGORY_ID")
+TICKET_PANEL_CHANNEL_ID = int(os.getenv("TICKET_PANEL_CHANNEL_ID", "0") or "0")
+TICKET_PANEL_MESSAGE_ID = int(os.getenv("TICKET_PANEL_MESSAGE_ID", "0") or "0")
+TICKET_CONTACTS_MESSAGE_ID = int(os.getenv("TICKET_CONTACTS_MESSAGE_ID", "0") or "0")
 REMNAWAVE_BASE_URL = os.getenv("REMNAWAVE_BASE_URL", "").rstrip("/")
 REMNAWAVE_API_TOKEN = os.getenv("REMNAWAVE_API_TOKEN", "")
 REMNAWAVE_CADDY_API_KEY = os.getenv("REMNAWAVE_CADDY_API_KEY", "")
@@ -56,6 +59,10 @@ REMNAWAVE_PANEL_TOP_LIMIT = max(
     min(20, int(os.getenv("REMNAWAVE_PANEL_TOP_LIMIT", "10"))),
 )
 COMMAND_SYNC_TIMEOUT = float(os.getenv("COMMAND_SYNC_TIMEOUT", "60"))
+ticket_panel_channel_id = TICKET_PANEL_CHANNEL_ID
+ticket_panel_message_id = TICKET_PANEL_MESSAGE_ID
+ticket_contacts_message_id = TICKET_CONTACTS_MESSAGE_ID
+ticket_panel_task: Optional[asyncio.Task[None]] = None
 remnawave_panel_channel_id = REMNAWAVE_PANEL_CHANNEL_ID
 remnawave_panel_message_id = REMNAWAVE_PANEL_MESSAGE_ID
 remnawave_contacts_message_id = REMNAWAVE_CONTACTS_MESSAGE_ID
@@ -816,6 +823,109 @@ class TicketCloseView(discord.ui.View):
         await interaction.channel.delete(reason=f"Ticket closed by {interaction.user}")
 
 
+async def update_ticket_panel_once() -> bool:
+    global ticket_panel_message_id, ticket_contacts_message_id
+
+    if not ticket_panel_channel_id:
+        return False
+
+    channel = bot.get_channel(ticket_panel_channel_id)
+    if channel is None:
+        try:
+            channel = await bot.fetch_channel(ticket_panel_channel_id)
+        except discord.HTTPException:
+            logger.exception("Failed to fetch ticket panel channel %s", ticket_panel_channel_id)
+            return False
+
+    if not isinstance(channel, discord.abc.Messageable):
+        logger.warning("Ticket panel channel %s is not messageable", ticket_panel_channel_id)
+        return False
+
+    panel_message = None
+    contacts_message = None
+    if ticket_panel_message_id and hasattr(channel, "fetch_message"):
+        try:
+            panel_message = await channel.fetch_message(ticket_panel_message_id)
+        except discord.NotFound:
+            logger.warning(
+                "Ticket panel message %s was not found; creating a new one",
+                ticket_panel_message_id,
+            )
+        except discord.HTTPException:
+            logger.exception("Failed to fetch ticket panel message %s", ticket_panel_message_id)
+            return False
+
+    if ticket_contacts_message_id and hasattr(channel, "fetch_message"):
+        try:
+            contacts_message = await channel.fetch_message(ticket_contacts_message_id)
+        except discord.NotFound:
+            logger.warning(
+                "Ticket contacts message %s was not found; creating a new one",
+                ticket_contacts_message_id,
+            )
+        except discord.HTTPException:
+            logger.exception(
+                "Failed to fetch ticket contacts message %s",
+                ticket_contacts_message_id,
+            )
+            return False
+
+    try:
+        if panel_message is None:
+            panel_message = await channel.send(
+                embed=build_ticket_panel_embed(),
+                view=TicketCreateView(),
+            )
+            ticket_panel_message_id = panel_message.id
+            logger.info(
+                "Ticket panel created: channel=%s message=%s. Add TICKET_PANEL_MESSAGE_ID=%s to .env",
+                ticket_panel_channel_id,
+                ticket_panel_message_id,
+                ticket_panel_message_id,
+            )
+        else:
+            await panel_message.edit(embed=build_ticket_panel_embed(), view=TicketCreateView())
+
+        if contacts_message is None:
+            contacts_message = await channel.send(embed=build_subscription_contacts_embed())
+            ticket_contacts_message_id = contacts_message.id
+            logger.info(
+                "Ticket contacts panel created: channel=%s message=%s. Add TICKET_CONTACTS_MESSAGE_ID=%s to .env",
+                ticket_panel_channel_id,
+                ticket_contacts_message_id,
+                ticket_contacts_message_id,
+            )
+        else:
+            await contacts_message.edit(embed=build_subscription_contacts_embed(), view=None)
+
+        logger.info(
+            "Ticket panel updated: channel=%s message=%s contacts_message=%s",
+            ticket_panel_channel_id,
+            ticket_panel_message_id,
+            ticket_contacts_message_id,
+        )
+    except discord.HTTPException:
+        logger.exception("Failed to update ticket panel")
+        return False
+
+    return True
+
+
+async def ticket_panel_starter() -> None:
+    await bot.wait_until_ready()
+    await update_ticket_panel_once()
+
+
+def ensure_ticket_panel_task() -> None:
+    global ticket_panel_task
+
+    if ticket_panel_task and not ticket_panel_task.done():
+        return
+
+    ticket_panel_task = bot.loop.create_task(ticket_panel_starter())
+    logger.info("Ticket panel starter queued")
+
+
 async def update_remnawave_panel_once() -> bool:
     global remnawave_panel_message_id, remnawave_contacts_message_id
 
@@ -937,6 +1047,9 @@ async def setup_hook() -> None:
     bot.add_view(TicketCreateView())
     bot.add_view(TicketCloseView())
     logger.info("Persistent ticket views registered")
+    if ticket_panel_channel_id:
+        ensure_ticket_panel_task()
+
     if remnawave_panel_channel_id:
         ensure_remnawave_panel_task()
 
@@ -987,6 +1100,8 @@ async def on_ready() -> None:
 @app_commands.default_permissions(administrator=True)
 @app_commands.checks.has_permissions(administrator=True)
 async def ticket_panel(interaction: discord.Interaction) -> None:
+    global ticket_panel_channel_id, ticket_panel_message_id, ticket_contacts_message_id
+
     if not interaction.channel or not isinstance(interaction.channel, discord.abc.Messageable):
         await interaction.response.send_message(
             "Панель можно отправить только в текстовый канал сервера.",
@@ -994,10 +1109,23 @@ async def ticket_panel(interaction: discord.Interaction) -> None:
         )
         return
 
-    await interaction.channel.send(embed=build_ticket_panel_embed(), view=TicketCreateView())
-    await interaction.channel.send(embed=build_subscription_contacts_embed())
+    panel_message = await interaction.channel.send(
+        embed=build_ticket_panel_embed(),
+        view=TicketCreateView(),
+    )
+    contacts_message = await interaction.channel.send(embed=build_subscription_contacts_embed())
+    ticket_panel_channel_id = panel_message.channel.id
+    ticket_panel_message_id = panel_message.id
+    ticket_contacts_message_id = contacts_message.id
+
     await interaction.response.send_message(
-        "Панель тикетов и контакты покупки отправлены.",
+        (
+            "Панель тикетов и контакты покупки отправлены.\n"
+            "Чтобы они восстанавливались после перезапуска бота, добавь в `.env`:\n"
+            f"`TICKET_PANEL_CHANNEL_ID={panel_message.channel.id}`\n"
+            f"`TICKET_PANEL_MESSAGE_ID={panel_message.id}`\n"
+            f"`TICKET_CONTACTS_MESSAGE_ID={contacts_message.id}`"
+        ),
         ephemeral=True,
     )
 
