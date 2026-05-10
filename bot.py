@@ -40,7 +40,20 @@ REMNAWAVE_USER_AGENT = os.getenv(
         "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
     ),
 )
+REMNAWAVE_PANEL_CHANNEL_ID = int(os.getenv("REMNAWAVE_PANEL_CHANNEL_ID", "0") or "0")
+REMNAWAVE_PANEL_MESSAGE_ID = int(os.getenv("REMNAWAVE_PANEL_MESSAGE_ID", "0") or "0")
+REMNAWAVE_PANEL_REFRESH_SECONDS = max(
+    30,
+    int(os.getenv("REMNAWAVE_PANEL_REFRESH_SECONDS", "60")),
+)
+REMNAWAVE_PANEL_TOP_LIMIT = max(
+    1,
+    min(20, int(os.getenv("REMNAWAVE_PANEL_TOP_LIMIT", "10"))),
+)
 COMMAND_SYNC_TIMEOUT = float(os.getenv("COMMAND_SYNC_TIMEOUT", "60"))
+remnawave_panel_channel_id = REMNAWAVE_PANEL_CHANNEL_ID
+remnawave_panel_message_id = REMNAWAVE_PANEL_MESSAGE_ID
+remnawave_panel_task: Optional[asyncio.Task[None]] = None
 
 
 intents = discord.Intents.default()
@@ -132,6 +145,22 @@ def first_available(*values: Any) -> Any:
     for value in values:
         if value is not None:
             return value
+
+    return None
+
+
+def as_number(value: Any) -> Optional[float]:
+    if isinstance(value, bool):
+        return None
+
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    if isinstance(value, str):
+        try:
+            return float(value.replace(" ", "").replace(",", "."))
+        except ValueError:
+            return None
 
     return None
 
@@ -233,14 +262,25 @@ def remnawave_request_json(path: str) -> dict[str, Any]:
     return payload
 
 
+def unwrap_remnawave_response(payload: dict[str, Any]) -> dict[str, Any]:
+    response = payload.get("response")
+    if isinstance(response, dict):
+        logger.info("Remnawave response payload keys: %s", sorted(response.keys()))
+        return response
+
+    return payload
+
+
 async def fetch_remnawave_stats() -> dict[str, Any]:
     try:
-        return await asyncio.to_thread(remnawave_request_json, REMNAWAVE_STATS_PATH)
+        payload = await asyncio.to_thread(remnawave_request_json, REMNAWAVE_STATS_PATH)
     except urllib.error.HTTPError as error:
         if error.code != 404 or REMNAWAVE_STATS_PATH == "/api/system/stats":
             raise
 
-    return await asyncio.to_thread(remnawave_request_json, "/api/system/stats")
+        payload = await asyncio.to_thread(remnawave_request_json, "/api/system/stats")
+
+    return unwrap_remnawave_response(payload)
 
 
 def format_http_error(error: urllib.error.HTTPError) -> str:
@@ -272,10 +312,160 @@ def format_http_error(error: urllib.error.HTTPError) -> str:
     return f"Remnawave вернул HTTP {error.code}. {hint}"
 
 
+def list_from_payload(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+
+    if isinstance(value, dict):
+        for key in ("items", "nodes", "data", "list"):
+            nested = value.get(key)
+            if isinstance(nested, list):
+                return [item for item in nested if isinstance(item, dict)]
+
+        if all(isinstance(item, dict) for item in value.values()):
+            return list(value.values())
+
+    return []
+
+
+def extract_nodes(stats: dict[str, Any]) -> list[dict[str, Any]]:
+    nodes_payload = first_available(
+        stats.get("nodes"),
+        stats.get("nodesStats"),
+        stats.get("nodeStats"),
+        find_path(stats, ("nodes", "items")),
+        find_path(stats, ("nodes", "data")),
+    )
+    return list_from_payload(nodes_payload)
+
+
+def node_display_name(node: dict[str, Any]) -> str:
+    name = first_available(
+        node.get("name"),
+        node.get("nodeName"),
+        node.get("remark"),
+        node.get("address"),
+        node.get("uuid"),
+    )
+    country = first_available(
+        node.get("countryEmoji"),
+        node.get("countryFlag"),
+        node.get("nodeCountryEmoji"),
+    )
+
+    if country and name:
+        return f"{country} {name}"
+
+    return str(name or "Без названия")
+
+
+def node_online_users(node: dict[str, Any]) -> Optional[float]:
+    return as_number(
+        first_available(
+            node.get("usersOnline"),
+            node.get("onlineUsers"),
+            node.get("onlineNow"),
+            node.get("online"),
+            node.get("connectedUsers"),
+        )
+    )
+
+
+def format_node_lines(nodes: list[dict[str, Any]]) -> str:
+    parsed_nodes = []
+    for node in nodes:
+        online_users = node_online_users(node)
+        if online_users is None:
+            continue
+
+        parsed_nodes.append((online_users, node_display_name(node)))
+
+    if not parsed_nodes:
+        return "нет данных"
+
+    parsed_nodes.sort(key=lambda item: item[0], reverse=True)
+    lines = [
+        f"{index}. {name}: **{format_stat(online_users)}**"
+        for index, (online_users, name) in enumerate(parsed_nodes[:10], start=1)
+    ]
+    if len(parsed_nodes) > 10:
+        lines.append(f"...и еще {len(parsed_nodes) - 10}")
+
+    return "\n".join(lines)
+
+
+def get_online_node_rows(nodes: list[dict[str, Any]]) -> list[tuple[float, str]]:
+    rows = []
+    for node in nodes:
+        online_users = node_online_users(node)
+        if online_users is None:
+            continue
+
+        rows.append((online_users, node_display_name(node)))
+
+    rows.sort(key=lambda item: item[0], reverse=True)
+    return rows
+
+
+def build_remnawave_panel_embed(stats: dict[str, Any]) -> discord.Embed:
+    nodes = extract_nodes(stats)
+    node_rows = get_online_node_rows(nodes)
+    online_now = sum(online_users for online_users, _name in node_rows)
+    active_users = first_available(
+        find_path(stats, ("users", "statusCounts", "active")),
+        find_path(stats, ("users", "status", "active")),
+        find_path(stats, ("users", "statuses", "active")),
+        find_path(stats, ("users", "active")),
+    )
+    total_users = first_available(
+        find_path(stats, ("users", "total")),
+        find_value(stats, {"totalusers", "userscount"}),
+    )
+
+    embed = discord.Embed(
+        title="Remnawave: онлайн по нодам",
+        color=discord.Color.teal(),
+        timestamp=discord.utils.utcnow(),
+    )
+    embed.add_field(name="Онлайн на нодах", value=format_stat(online_now), inline=True)
+    embed.add_field(name="Активные пользователи", value=format_stat(active_users), inline=True)
+    embed.add_field(name="Всего пользователей", value=format_stat(total_users), inline=True)
+
+    if node_rows:
+        lines = [
+            f"{index}. {name}: **{format_stat(online_users)}**"
+            for index, (online_users, name) in enumerate(
+                node_rows[:REMNAWAVE_PANEL_TOP_LIMIT],
+                start=1,
+            )
+        ]
+        if len(node_rows) > REMNAWAVE_PANEL_TOP_LIMIT:
+            lines.append(f"...и еще {len(node_rows) - REMNAWAVE_PANEL_TOP_LIMIT}")
+        top_nodes = "\n".join(lines)
+    else:
+        top_nodes = "нет данных"
+
+    embed.add_field(name="Топ нод", value=top_nodes, inline=False)
+    embed.set_footer(
+        text=(
+            "Автообновление каждые "
+            f"{REMNAWAVE_PANEL_REFRESH_SECONDS} сек. Последнее обновление"
+        )
+    )
+    return embed
+
+
 def build_remnawave_embed(stats: dict[str, Any]) -> discord.Embed:
+    nodes = extract_nodes(stats)
+    node_online_total = sum(
+        online_users
+        for online_users in (node_online_users(node) for node in nodes)
+        if online_users is not None
+    )
     online_now = first_available(
         find_path(stats, ("online", "total")),
         find_path(stats, ("onlineStats", "onlineNow")),
+        node_online_total if nodes else None,
         find_value(stats, {"onlinenow", "onlineusers", "uniqueonlineusers", "totalonline"}),
     )
     last_day = first_available(
@@ -321,6 +511,13 @@ def build_remnawave_embed(stats: dict[str, Any]) -> discord.Embed:
             name="Подключений на нодах",
             value=format_stat(total_online_on_nodes),
             inline=True,
+        )
+
+    if nodes:
+        embed.add_field(
+            name="Онлайн по нодам",
+            value=format_node_lines(nodes),
+            inline=False,
         )
 
     embed.set_footer(text="Данные Remnawave могут обновляться с задержкой до 1 минуты.")
@@ -468,6 +665,89 @@ class TicketCloseView(discord.ui.View):
         await interaction.channel.delete(reason=f"Ticket closed by {interaction.user}")
 
 
+async def update_remnawave_panel_once() -> bool:
+    global remnawave_panel_message_id
+
+    if not remnawave_panel_channel_id:
+        return False
+
+    channel = bot.get_channel(remnawave_panel_channel_id)
+    if channel is None:
+        try:
+            channel = await bot.fetch_channel(remnawave_panel_channel_id)
+        except discord.HTTPException:
+            logger.exception(
+                "Failed to fetch Remnawave panel channel %s",
+                remnawave_panel_channel_id,
+            )
+            return False
+
+    if not isinstance(channel, discord.abc.Messageable):
+        logger.warning(
+            "Remnawave panel channel %s is not messageable",
+            remnawave_panel_channel_id,
+        )
+        return False
+
+    message = None
+    if remnawave_panel_message_id and hasattr(channel, "fetch_message"):
+        try:
+            message = await channel.fetch_message(remnawave_panel_message_id)
+        except discord.NotFound:
+            logger.warning(
+                "Remnawave panel message %s was not found; creating a new one",
+                remnawave_panel_message_id,
+            )
+        except discord.HTTPException:
+            logger.exception("Failed to fetch Remnawave panel message %s", remnawave_panel_message_id)
+            return False
+
+    try:
+        stats = await fetch_remnawave_stats()
+        embed = build_remnawave_panel_embed(stats)
+        if message is None:
+            message = await channel.send(embed=embed)
+            remnawave_panel_message_id = message.id
+            logger.info(
+                "Remnawave panel created: channel=%s message=%s. Add REMNAWAVE_PANEL_MESSAGE_ID=%s to .env",
+                remnawave_panel_channel_id,
+                remnawave_panel_message_id,
+                remnawave_panel_message_id,
+            )
+        else:
+            await message.edit(embed=embed, view=None)
+        logger.info(
+            "Remnawave panel updated: channel=%s message=%s",
+            remnawave_panel_channel_id,
+            remnawave_panel_message_id,
+        )
+    except Exception:
+        logger.exception("Failed to update Remnawave panel")
+        return False
+
+    return True
+
+
+async def remnawave_panel_updater() -> None:
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        await update_remnawave_panel_once()
+        await asyncio.sleep(REMNAWAVE_PANEL_REFRESH_SECONDS)
+
+
+def ensure_remnawave_panel_task() -> None:
+    global remnawave_panel_task
+
+    if remnawave_panel_task and not remnawave_panel_task.done():
+        return
+
+    remnawave_panel_task = bot.loop.create_task(remnawave_panel_updater())
+    logger.info(
+        "Remnawave panel updater started with interval %s seconds",
+        REMNAWAVE_PANEL_REFRESH_SECONDS,
+    )
+
+
 @bot.event
 async def setup_hook() -> None:
     logger.info("Starting ticket bot version %s", BOT_VERSION)
@@ -475,6 +755,8 @@ async def setup_hook() -> None:
     bot.add_view(TicketCreateView())
     bot.add_view(TicketCloseView())
     logger.info("Persistent ticket views registered")
+    if remnawave_panel_channel_id:
+        ensure_remnawave_panel_task()
 
     guild = discord.Object(id=GUILD_ID)
     local_commands = bot.tree.get_commands(guild=guild)
@@ -603,6 +885,84 @@ async def remnawave_active(interaction: discord.Interaction) -> None:
 
 @remnawave_active.error
 async def remnawave_active_error(
+    interaction: discord.Interaction,
+    error: app_commands.AppCommandError,
+) -> None:
+    if isinstance(error, app_commands.MissingPermissions):
+        await interaction.response.send_message(
+            "Эту команду может использовать только администратор.",
+            ephemeral=True,
+        )
+        return
+
+    raise error
+
+
+@bot.tree.command(
+    name="remnawave-panel",
+    description="Отправить постоянную панель Remnawave с топом нод.",
+    guild=discord.Object(id=GUILD_ID),
+)
+@app_commands.default_permissions(administrator=True)
+@app_commands.checks.has_permissions(administrator=True)
+async def remnawave_panel(interaction: discord.Interaction) -> None:
+    global remnawave_panel_channel_id, remnawave_panel_message_id
+
+    if not REMNAWAVE_BASE_URL or not REMNAWAVE_API_TOKEN:
+        await interaction.response.send_message(
+            (
+                "Remnawave не настроен. Заполни `REMNAWAVE_BASE_URL`"
+                " и `REMNAWAVE_API_TOKEN` в `.env`."
+            ),
+            ephemeral=True,
+        )
+        return
+
+    if not interaction.channel or not isinstance(interaction.channel, discord.abc.Messageable):
+        await interaction.response.send_message(
+            "Панель можно отправить только в текстовый канал сервера.",
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True, thinking=True)
+
+    try:
+        stats = await fetch_remnawave_stats()
+    except urllib.error.HTTPError as error:
+        await interaction.followup.send(format_http_error(error), ephemeral=True)
+        return
+    except urllib.error.URLError as error:
+        await interaction.followup.send(
+            f"Не удалось подключиться к Remnawave: `{error.reason}`",
+            ephemeral=True,
+        )
+        return
+    except (json.JSONDecodeError, RuntimeError) as error:
+        await interaction.followup.send(
+            f"Не удалось прочитать ответ Remnawave: `{error}`",
+            ephemeral=True,
+        )
+        return
+
+    message = await interaction.channel.send(embed=build_remnawave_panel_embed(stats))
+    remnawave_panel_channel_id = message.channel.id
+    remnawave_panel_message_id = message.id
+    ensure_remnawave_panel_task()
+
+    await interaction.followup.send(
+        (
+            "Панель Remnawave отправлена и будет обновляться.\n"
+            "Чтобы она продолжила обновляться после перезапуска бота, добавь в `.env`:\n"
+            f"`REMNAWAVE_PANEL_CHANNEL_ID={message.channel.id}`\n"
+            f"`REMNAWAVE_PANEL_MESSAGE_ID={message.id}`"
+        ),
+        ephemeral=True,
+    )
+
+
+@remnawave_panel.error
+async def remnawave_panel_error(
     interaction: discord.Interaction,
     error: app_commands.AppCommandError,
 ) -> None:
