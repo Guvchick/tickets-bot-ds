@@ -364,6 +364,42 @@ def list_from_payload(value: Any) -> list[dict[str, Any]]:
     return []
 
 
+COUNTRY_FLAGS = {
+    "австралия": "🇦🇺",
+    "австрия": "🇦🇹",
+    "англия": "🇬🇧",
+    "великобритания": "🇬🇧",
+    "германия": "🇩🇪",
+    "дания": "🇩🇰",
+    "латвия": "🇱🇻",
+    "нигерия": "🇳🇬",
+    "нидерланды": "🇳🇱",
+    "польша": "🇵🇱",
+    "россия": "🇷🇺",
+    "сша": "🇺🇸",
+    "финляндия": "🇫🇮",
+    "франция": "🇫🇷",
+    "швеция": "🇸🇪",
+    "japan": "🇯🇵",
+    "latvia": "🇱🇻",
+    "netherlands": "🇳🇱",
+    "nigeria": "🇳🇬",
+    "poland": "🇵🇱",
+    "russia": "🇷🇺",
+    "sweden": "🇸🇪",
+    "usa": "🇺🇸",
+}
+
+
+def flag_from_name(name: str) -> Optional[str]:
+    normalized_name = name.lower()
+    for country_name, flag in COUNTRY_FLAGS.items():
+        if country_name in normalized_name:
+            return flag
+
+    return None
+
+
 def extract_nodes(stats: dict[str, Any]) -> list[dict[str, Any]]:
     nodes_payload = first_available(
         stats.get("nodes"),
@@ -393,8 +429,8 @@ def node_display_name(node: dict[str, Any]) -> str:
         node.get("emoji"),
     )
 
-    if flag and name:
-        return f"{flag} {name}"
+    if name:
+        return f"{flag or flag_from_name(str(name)) or '🌐'} {name}"
 
     return str(name or "Без названия")
 
@@ -438,7 +474,7 @@ def get_online_node_rows(nodes: list[dict[str, Any]]) -> list[tuple[float, str]]
     rows = []
     for node in nodes:
         online_users = node_online_users(node)
-        if online_users is None:
+        if online_users is None or online_users <= 0:
             continue
 
         rows.append((online_users, node_display_name(node)))
@@ -475,10 +511,8 @@ def build_remnawave_panel_embed(
     if node_rows:
         lines = []
         for index, (online_users, name) in enumerate(node_rows, start=1):
-            marker = "🟢" if online_users > 0 else "⚪"
             lines.append(
-                f"`#{index:02}` {marker} {name}\n"
-                f"`{format_stat(online_users).rjust(4)}` онлайн"
+                f"`#{index:02}` {name} — **{format_stat(online_users)}** онлайн"
             )
 
         chunks = []
