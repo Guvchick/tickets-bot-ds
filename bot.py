@@ -380,17 +380,21 @@ def node_display_name(node: dict[str, Any]) -> str:
         node.get("name"),
         node.get("nodeName"),
         node.get("remark"),
+        node.get("displayName"),
+        node.get("label"),
         node.get("address"),
         node.get("uuid"),
     )
-    country = first_available(
+    flag = first_available(
         node.get("countryEmoji"),
         node.get("countryFlag"),
         node.get("nodeCountryEmoji"),
+        node.get("flag"),
+        node.get("emoji"),
     )
 
-    if country and name:
-        return f"{country} {name}"
+    if flag and name:
+        return f"{flag} {name}"
 
     return str(name or "Без названия")
 
@@ -459,41 +463,66 @@ def build_remnawave_panel_embed(
         find_path(stats, ("users", "active")),
         find_path(stats, ("total", "users")),
     )
-    total_users = first_available(
-        find_path(stats, ("users", "total")),
-        find_path(stats, ("total", "users")),
-        find_value(stats, {"totalusers", "userscount"}),
-    )
-    total_nodes = first_available(
-        len(nodes) if nodes else None,
-        find_path(stats, ("total", "nodes")),
-    )
 
     embed = discord.Embed(
-        title="Remnawave: онлайн по нодам",
+        title="🌼 Онлайн серверов",
         color=discord.Color.teal(),
         timestamp=discord.utils.utcnow(),
     )
-    embed.add_field(name="Онлайн на нодах", value=format_stat(online_now), inline=True)
-    embed.add_field(name="Активные пользователи", value=format_stat(active_users), inline=True)
-    embed.add_field(name="Нод", value=format_stat(total_nodes), inline=True)
-    embed.add_field(name="Всего пользователей", value=format_stat(total_users), inline=True)
+    embed.add_field(name="Сейчас онлайн", value=f"**{format_stat(online_now)}**", inline=True)
+    embed.add_field(name="Активные", value=f"**{format_stat(active_users)}**", inline=True)
 
     if node_rows:
-        lines = [
-            f"{index}. {name}: **{format_stat(online_users)}**"
-            for index, (online_users, name) in enumerate(
-                node_rows[:REMNAWAVE_PANEL_TOP_LIMIT],
-                start=1,
+        lines = []
+        for index, (online_users, name) in enumerate(node_rows, start=1):
+            marker = "🟢" if online_users > 0 else "⚪"
+            lines.append(
+                f"`#{index:02}` {marker} {name}\n"
+                f"`{format_stat(online_users).rjust(4)}` онлайн"
             )
-        ]
-        if len(node_rows) > REMNAWAVE_PANEL_TOP_LIMIT:
-            lines.append(f"...и еще {len(node_rows) - REMNAWAVE_PANEL_TOP_LIMIT}")
-        top_nodes = "\n".join(lines)
-    else:
-        top_nodes = "нет данных"
 
-    embed.add_field(name="Топ нод", value=top_nodes, inline=False)
+        chunks = []
+        current_chunk = []
+        current_length = 0
+        for line in lines:
+            line_length = len(line) + 1
+            if current_chunk and current_length + line_length > 950:
+                chunks.append("\n".join(current_chunk))
+                current_chunk = []
+                current_length = 0
+
+            current_chunk.append(line)
+            current_length += line_length
+
+        if current_chunk:
+            chunks.append("\n".join(current_chunk))
+
+        for index, chunk in enumerate(chunks[:25], start=1):
+            field_name = "Все серверы" if index == 1 else f"Все серверы, часть {index}"
+            embed.add_field(name=field_name, value=chunk, inline=False)
+
+        if len(chunks) > 25:
+            hidden_count = sum(
+                len(chunk.split("\n`#")) for chunk in chunks[25:]
+            )
+            embed.add_field(
+                name="Не показано",
+                value=f"Еще {hidden_count} серверов не помещаются в Discord embed.",
+                inline=False,
+            )
+    else:
+        embed.add_field(name="Все серверы", value="нет данных", inline=False)
+
+    if node_rows:
+        top_preview = ", ".join(
+            f"{name} ({format_stat(online_users)})"
+            for index, (online_users, name) in enumerate(
+                node_rows[:3],
+                start=1
+            )
+        )
+        embed.description = f"Лидеры по онлайну: {top_preview}"
+
     embed.set_footer(
         text=(
             "Автообновление каждые "
@@ -953,7 +982,7 @@ async def remnawave_active_error(
 
 @bot.tree.command(
     name="remnawave-panel",
-    description="Отправить постоянную панель Remnawave с топом нод.",
+    description="Отправить постоянную панель Remnawave с топом серверов.",
     guild=discord.Object(id=GUILD_ID),
 )
 @app_commands.default_permissions(administrator=True)

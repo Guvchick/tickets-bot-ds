@@ -6,7 +6,7 @@ Python-бот для Discord, который создает приватные �
 
 - slash-команда `/ticket-panel` создает панель поддержки и доступна только администраторам;
 - slash-команда `/remnawave-active` показывает активных и онлайн пользователей Remnawave;
-- slash-команда `/remnawave-panel` создает постоянную панель Remnawave с топом нод;
+- slash-команда `/remnawave-panel` создает постоянную панель Remnawave со списком серверов;
 - пользователь нажимает кнопку и получает приватный канал тикета;
 - поддержку автоматически пингует роль из `SUPPORT_ROLE_ID`;
 - у пользователя может быть только один открытый тикет;
@@ -165,12 +165,12 @@ python bot.py
 - `REMNAWAVE_API_TOKEN` — API token из Remnawave Settings;
 - `REMNAWAVE_CADDY_API_KEY` — необязательно, если перед Remnawave стоит Caddy Auth;
 - `REMNAWAVE_STATS_PATH` — путь статистики, по умолчанию `/api/system/stats/recap`.
-- `REMNAWAVE_NODES_PATH` — путь списка нод, по умолчанию `/api/nodes`; используется для топа нод по онлайну.
+- `REMNAWAVE_NODES_PATH` — путь списка серверов, по умолчанию `/api/nodes`; используется для списка серверов по онлайну.
 - `REMNAWAVE_X_FORWARDED_FOR` и `REMNAWAVE_X_FORWARDED_PROTO` — заголовки для прокси Remnawave, обычно можно оставить `127.0.0.1` и `https`.
 - `REMNAWAVE_USER_AGENT` — браузерный User-Agent для Cloudflare, чтобы API-запросы не выглядели как стандартный `Python-urllib`.
 - `REMNAWAVE_PANEL_CHANNEL_ID` и `REMNAWAVE_PANEL_MESSAGE_ID` — ID канала и сообщения панели для автообновления после перезапуска бота. Если указан только канал, бот создаст новую панель сам и напишет ID сообщения в логи.
 - `REMNAWAVE_PANEL_REFRESH_SECONDS` — интервал обновления панели, минимум 30 секунд.
-- `REMNAWAVE_PANEL_TOP_LIMIT` — сколько нод показывать в топе, от 1 до 20.
+- `REMNAWAVE_PANEL_TOP_LIMIT` — оставлено для совместимости; панель показывает полный список серверов.
 - `LOG_LEVEL` — уровень логов, обычно `INFO`; для более подробной диагностики можно поставить `DEBUG`.
 - `COMMAND_SYNC_TIMEOUT` — сколько секунд ждать синхронизацию slash-команд с Discord.
 
