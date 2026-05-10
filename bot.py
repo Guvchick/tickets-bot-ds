@@ -33,6 +33,13 @@ REMNAWAVE_STATS_PATH = os.getenv("REMNAWAVE_STATS_PATH", "/api/system/stats/reca
 REMNAWAVE_REQUEST_TIMEOUT = float(os.getenv("REMNAWAVE_REQUEST_TIMEOUT", "15"))
 REMNAWAVE_X_FORWARDED_FOR = os.getenv("REMNAWAVE_X_FORWARDED_FOR", "127.0.0.1")
 REMNAWAVE_X_FORWARDED_PROTO = os.getenv("REMNAWAVE_X_FORWARDED_PROTO", "https")
+REMNAWAVE_USER_AGENT = os.getenv(
+    "REMNAWAVE_USER_AGENT",
+    (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    ),
+)
 COMMAND_SYNC_TIMEOUT = float(os.getenv("COMMAND_SYNC_TIMEOUT", "60"))
 
 
@@ -156,7 +163,9 @@ def remnawave_request_json(path: str) -> dict[str, Any]:
         request_url,
         headers={
             "Accept": "application/json",
+            "Accept-Language": "en-US,en;q=0.9",
             "Authorization": f"Bearer {REMNAWAVE_API_TOKEN}",
+            "User-Agent": REMNAWAVE_USER_AGENT,
             "x-forwarded-for": REMNAWAVE_X_FORWARDED_FOR,
             "x-forwarded-proto": REMNAWAVE_X_FORWARDED_PROTO,
         },
@@ -249,6 +258,13 @@ def format_http_error(error: urllib.error.HTTPError) -> str:
             "Доступ запрещен. Чаще всего это API-токен без нужных прав, IP-ограничение"
             " токена или включенный Caddy/Auth Portal без `REMNAWAVE_CADDY_API_KEY`."
         )
+        if "error 1010" in response_body.lower() or '"error_code":1010' in response_body:
+            hint = (
+                "Запрос заблокировал Cloudflare Error 1010 по browser signature. "
+                "Нужно разрешить серверу бота доступ в Cloudflare: добавить WAF/Skip rule"
+                " для `/api/*` или IP сервера бота, либо отключить Browser Integrity Check"
+                " для API-домена."
+            )
 
     if response_body:
         return f"Remnawave вернул HTTP {error.code}: `{response_body}`\n{hint}"

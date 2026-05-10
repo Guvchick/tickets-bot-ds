@@ -34,6 +34,7 @@ REMNAWAVE_CADDY_API_KEY=api_key_caddy_если_используется_или_�
 REMNAWAVE_STATS_PATH=/api/system/stats/recap
 REMNAWAVE_X_FORWARDED_FOR=127.0.0.1
 REMNAWAVE_X_FORWARDED_PROTO=https
+REMNAWAVE_USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36
 ```
 
 3. Privileged intents в Discord Developer Portal включать не нужно.
@@ -107,6 +108,7 @@ REMNAWAVE_CADDY_API_KEY=api_key_caddy_если_используется_или_�
 REMNAWAVE_STATS_PATH=/api/system/stats/recap
 REMNAWAVE_X_FORWARDED_FOR=127.0.0.1
 REMNAWAVE_X_FORWARDED_PROTO=https
+REMNAWAVE_USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36
 ```
 
 4. Privileged intents в Discord Developer Portal включать не нужно.
@@ -152,5 +154,6 @@ python bot.py
 - `REMNAWAVE_CADDY_API_KEY` — необязательно, если перед Remnawave стоит Caddy Auth;
 - `REMNAWAVE_STATS_PATH` — путь статистики, по умолчанию `/api/system/stats/recap`.
 - `REMNAWAVE_X_FORWARDED_FOR` и `REMNAWAVE_X_FORWARDED_PROTO` — заголовки для прокси Remnawave, обычно можно оставить `127.0.0.1` и `https`.
+- `REMNAWAVE_USER_AGENT` — браузерный User-Agent для Cloudflare, чтобы API-запросы не выглядели как стандартный `Python-urllib`.
 - `LOG_LEVEL` — уровень логов, обычно `INFO`; для более подробной диагностики можно поставить `DEBUG`.
 - `COMMAND_SYNC_TIMEOUT` — сколько секунд ждать синхронизацию slash-команд с Discord.
