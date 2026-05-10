@@ -27,6 +27,7 @@ GUILD_ID=id_сервера
 SUPPORT_ROLE_ID=id_роли_поддержки
 TICKET_CATEGORY_ID=id_категории_тикетов_или_оставь_пустым
 LOG_LEVEL=INFO
+COMMAND_SYNC_TIMEOUT=60
 REMNAWAVE_BASE_URL=https://panel.example.com
 REMNAWAVE_API_TOKEN=токен_api_из_remnawave
 REMNAWAVE_CADDY_API_KEY=api_key_caddy_если_используется_или_оставь_пустым
@@ -99,6 +100,7 @@ GUILD_ID=id_сервера
 SUPPORT_ROLE_ID=id_роли_поддержки
 TICKET_CATEGORY_ID=id_категории_тикетов_или_оставь_пустым
 LOG_LEVEL=INFO
+COMMAND_SYNC_TIMEOUT=60
 REMNAWAVE_BASE_URL=https://panel.example.com
 REMNAWAVE_API_TOKEN=токен_api_из_remnawave
 REMNAWAVE_CADDY_API_KEY=api_key_caddy_если_используется_или_оставь_пустым
@@ -151,3 +153,4 @@ python bot.py
 - `REMNAWAVE_STATS_PATH` — путь статистики, по умолчанию `/api/system/stats/recap`.
 - `REMNAWAVE_X_FORWARDED_FOR` и `REMNAWAVE_X_FORWARDED_PROTO` — заголовки для прокси Remnawave, обычно можно оставить `127.0.0.1` и `https`.
 - `LOG_LEVEL` — уровень логов, обычно `INFO`; для более подробной диагностики можно поставить `DEBUG`.
+- `COMMAND_SYNC_TIMEOUT` — сколько секунд ждать синхронизацию slash-команд с Discord.

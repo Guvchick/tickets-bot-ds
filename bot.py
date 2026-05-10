@@ -33,6 +33,7 @@ REMNAWAVE_STATS_PATH = os.getenv("REMNAWAVE_STATS_PATH", "/api/system/stats/reca
 REMNAWAVE_REQUEST_TIMEOUT = float(os.getenv("REMNAWAVE_REQUEST_TIMEOUT", "15"))
 REMNAWAVE_X_FORWARDED_FOR = os.getenv("REMNAWAVE_X_FORWARDED_FOR", "127.0.0.1")
 REMNAWAVE_X_FORWARDED_PROTO = os.getenv("REMNAWAVE_X_FORWARDED_PROTO", "https")
+COMMAND_SYNC_TIMEOUT = float(os.getenv("COMMAND_SYNC_TIMEOUT", "60"))
 
 
 intents = discord.Intents.default()
@@ -453,23 +454,49 @@ class TicketCloseView(discord.ui.View):
 
 @bot.event
 async def setup_hook() -> None:
-    print(f"Starting ticket bot version {BOT_VERSION}")
+    logger.info("Starting ticket bot version %s", BOT_VERSION)
 
     bot.add_view(TicketCreateView())
     bot.add_view(TicketCloseView())
+    logger.info("Persistent ticket views registered")
 
     guild = discord.Object(id=GUILD_ID)
-    synced_commands = await bot.tree.sync(guild=guild)
+    local_commands = bot.tree.get_commands(guild=guild)
+    local_command_names = ", ".join(command.name for command in local_commands)
+    logger.info(
+        "Starting slash command sync for guild %s. Local commands: %s",
+        GUILD_ID,
+        local_command_names or "none",
+    )
+
+    try:
+        synced_commands = await asyncio.wait_for(
+            bot.tree.sync(guild=guild),
+            timeout=COMMAND_SYNC_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        logger.exception(
+            "Slash command sync timed out after %.0f seconds for guild %s",
+            COMMAND_SYNC_TIMEOUT,
+            GUILD_ID,
+        )
+        raise
+    except discord.HTTPException:
+        logger.exception("Discord rejected slash command sync for guild %s", GUILD_ID)
+        raise
+
     command_names = ", ".join(command.name for command in synced_commands)
-    print(
-        f"Synced {len(synced_commands)} slash command(s) for guild {GUILD_ID}: "
-        f"{command_names}"
+    logger.info(
+        "Synced %s slash command(s) for guild %s: %s",
+        len(synced_commands),
+        GUILD_ID,
+        command_names or "none",
     )
 
 
 @bot.event
 async def on_ready() -> None:
-    print(f"Logged in as {bot.user} ({bot.user.id})")
+    logger.info("Logged in as %s (%s)", bot.user, bot.user.id)
 
 
 @bot.tree.command(
