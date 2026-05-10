@@ -26,10 +26,13 @@ DISCORD_TOKEN=токен_бота
 GUILD_ID=id_сервера
 SUPPORT_ROLE_ID=id_роли_поддержки
 TICKET_CATEGORY_ID=id_категории_тикетов_или_оставь_пустым
+LOG_LEVEL=INFO
 REMNAWAVE_BASE_URL=https://panel.example.com
 REMNAWAVE_API_TOKEN=токен_api_из_remnawave
 REMNAWAVE_CADDY_API_KEY=api_key_caddy_если_используется_или_оставь_пустым
 REMNAWAVE_STATS_PATH=/api/system/stats/recap
+REMNAWAVE_X_FORWARDED_FOR=127.0.0.1
+REMNAWAVE_X_FORWARDED_PROTO=https
 ```
 
 3. Privileged intents в Discord Developer Portal включать не нужно.
@@ -52,6 +55,12 @@ docker compose up -d --force-recreate bot
 
 ```bash
 docker compose logs -f bot
+```
+
+После запуска в логах должно быть:
+
+```text
+Synced 2 slash command(s) for guild ...: ticket-panel, remnawave-active
 ```
 
 6. Остановить бота:
@@ -89,10 +98,13 @@ DISCORD_TOKEN=токен_бота
 GUILD_ID=id_сервера
 SUPPORT_ROLE_ID=id_роли_поддержки
 TICKET_CATEGORY_ID=id_категории_тикетов_или_оставь_пустым
+LOG_LEVEL=INFO
 REMNAWAVE_BASE_URL=https://panel.example.com
 REMNAWAVE_API_TOKEN=токен_api_из_remnawave
 REMNAWAVE_CADDY_API_KEY=api_key_caddy_если_используется_или_оставь_пустым
 REMNAWAVE_STATS_PATH=/api/system/stats/recap
+REMNAWAVE_X_FORWARDED_FOR=127.0.0.1
+REMNAWAVE_X_FORWARDED_PROTO=https
 ```
 
 4. Privileged intents в Discord Developer Portal включать не нужно.
@@ -129,6 +141,7 @@ python bot.py
 ## Remnawave
 
 Команда `/remnawave-active` доступна только администраторам сервера и отвечает приватно.
+Подробности подключения к Remnawave пишутся в логи бота без вывода токенов.
 
 Для нее нужны:
 
@@ -136,3 +149,5 @@ python bot.py
 - `REMNAWAVE_API_TOKEN` — API token из Remnawave Settings;
 - `REMNAWAVE_CADDY_API_KEY` — необязательно, если перед Remnawave стоит Caddy Auth;
 - `REMNAWAVE_STATS_PATH` — путь статистики, по умолчанию `/api/system/stats/recap`.
+- `REMNAWAVE_X_FORWARDED_FOR` и `REMNAWAVE_X_FORWARDED_PROTO` — заголовки для прокси Remnawave, обычно можно оставить `127.0.0.1` и `https`.
+- `LOG_LEVEL` — уровень логов, обычно `INFO`; для более подробной диагностики можно поставить `DEBUG`.

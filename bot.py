@@ -1,6 +1,8 @@
 import asyncio
 import json
+import logging
 import os
+import time
 import urllib.error
 import urllib.request
 from typing import Any, Optional
@@ -13,7 +15,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BOT_VERSION = "2026-05-10-slash-commands"
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger("tickets-bot")
+
+BOT_VERSION = "2026-05-10-remnawave-active"
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
 SUPPORT_ROLE_ID = int(os.getenv("SUPPORT_ROLE_ID", "0"))
@@ -23,6 +31,8 @@ REMNAWAVE_API_TOKEN = os.getenv("REMNAWAVE_API_TOKEN", "")
 REMNAWAVE_CADDY_API_KEY = os.getenv("REMNAWAVE_CADDY_API_KEY", "")
 REMNAWAVE_STATS_PATH = os.getenv("REMNAWAVE_STATS_PATH", "/api/system/stats/recap")
 REMNAWAVE_REQUEST_TIMEOUT = float(os.getenv("REMNAWAVE_REQUEST_TIMEOUT", "15"))
+REMNAWAVE_X_FORWARDED_FOR = os.getenv("REMNAWAVE_X_FORWARDED_FOR", "127.0.0.1")
+REMNAWAVE_X_FORWARDED_PROTO = os.getenv("REMNAWAVE_X_FORWARDED_PROTO", "https")
 
 
 intents = discord.Intents.default()
@@ -137,24 +147,79 @@ def remnawave_request_json(path: str) -> dict[str, Any]:
     if not path.startswith("/"):
         path = f"/{path}"
 
+    request_url = f"{REMNAWAVE_BASE_URL}{path}"
+    started_at = time.monotonic()
+    logger.info("Remnawave request started: GET %s", request_url)
+
     request = urllib.request.Request(
-        f"{REMNAWAVE_BASE_URL}{path}",
+        request_url,
         headers={
             "Accept": "application/json",
             "Authorization": f"Bearer {REMNAWAVE_API_TOKEN}",
+            "x-forwarded-for": REMNAWAVE_X_FORWARDED_FOR,
+            "x-forwarded-proto": REMNAWAVE_X_FORWARDED_PROTO,
         },
         method="GET",
     )
     if REMNAWAVE_CADDY_API_KEY:
         request.add_header("X-Api-Key", REMNAWAVE_CADDY_API_KEY)
 
-    with urllib.request.urlopen(request, timeout=REMNAWAVE_REQUEST_TIMEOUT) as response:
-        response_body = response.read().decode("utf-8")
+    try:
+        with urllib.request.urlopen(request, timeout=REMNAWAVE_REQUEST_TIMEOUT) as response:
+            response_body = response.read().decode("utf-8")
+            duration_ms = (time.monotonic() - started_at) * 1000
+            logger.info(
+                "Remnawave request completed: GET %s -> HTTP %s in %.0fms",
+                path,
+                response.status,
+                duration_ms,
+            )
+    except urllib.error.HTTPError as error:
+        duration_ms = (time.monotonic() - started_at) * 1000
+        logger.warning(
+            "Remnawave request rejected: GET %s -> HTTP %s in %.0fms",
+            path,
+            error.code,
+            duration_ms,
+        )
+        raise
+    except urllib.error.URLError as error:
+        duration_ms = (time.monotonic() - started_at) * 1000
+        logger.warning(
+            "Remnawave connection failed: GET %s in %.0fms: %s",
+            path,
+            duration_ms,
+            error.reason,
+        )
+        raise
+    except TimeoutError:
+        duration_ms = (time.monotonic() - started_at) * 1000
+        logger.warning(
+            "Remnawave request timed out: GET %s in %.0fms",
+            path,
+            duration_ms,
+        )
+        raise
 
-    payload = json.loads(response_body)
+    try:
+        payload = json.loads(response_body)
+    except json.JSONDecodeError:
+        logger.warning(
+            "Remnawave returned invalid JSON: GET %s, body length %s",
+            path,
+            len(response_body),
+        )
+        raise
+
     if not isinstance(payload, dict):
+        logger.warning(
+            "Remnawave returned unexpected JSON type: GET %s -> %s",
+            path,
+            type(payload).__name__,
+        )
         raise RuntimeError("Remnawave returned an unexpected response format.")
 
+    logger.info("Remnawave response parsed: GET %s, top-level keys: %s", path, sorted(payload.keys()))
     return payload
 
 
@@ -166,6 +231,28 @@ async def fetch_remnawave_stats() -> dict[str, Any]:
             raise
 
     return await asyncio.to_thread(remnawave_request_json, "/api/system/stats")
+
+
+def format_http_error(error: urllib.error.HTTPError) -> str:
+    try:
+        response_body = error.read().decode("utf-8").strip()
+    except Exception:
+        response_body = ""
+
+    if len(response_body) > 300:
+        response_body = f"{response_body[:300]}..."
+
+    hint = "Проверь URL, токен и права API."
+    if error.code == 403:
+        hint = (
+            "Доступ запрещен. Чаще всего это API-токен без нужных прав, IP-ограничение"
+            " токена или включенный Caddy/Auth Portal без `REMNAWAVE_CADDY_API_KEY`."
+        )
+
+    if response_body:
+        return f"Remnawave вернул HTTP {error.code}: `{response_body}`\n{hint}"
+
+    return f"Remnawave вернул HTTP {error.code}. {hint}"
 
 
 def build_remnawave_embed(stats: dict[str, Any]) -> discord.Embed:
@@ -372,9 +459,12 @@ async def setup_hook() -> None:
     bot.add_view(TicketCloseView())
 
     guild = discord.Object(id=GUILD_ID)
-    bot.tree.copy_global_to(guild=guild)
     synced_commands = await bot.tree.sync(guild=guild)
-    print(f"Synced {len(synced_commands)} slash command(s) for guild {GUILD_ID}")
+    command_names = ", ".join(command.name for command in synced_commands)
+    print(
+        f"Synced {len(synced_commands)} slash command(s) for guild {GUILD_ID}: "
+        f"{command_names}"
+    )
 
 
 @bot.event
@@ -448,7 +538,7 @@ async def remnawave_active(interaction: discord.Interaction) -> None:
         stats = await fetch_remnawave_stats()
     except urllib.error.HTTPError as error:
         await interaction.followup.send(
-            f"Remnawave вернул HTTP {error.code}. Проверь URL, токен и права API.",
+            format_http_error(error),
             ephemeral=True,
         )
         return
