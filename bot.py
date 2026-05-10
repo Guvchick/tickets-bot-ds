@@ -219,14 +219,26 @@ async def on_ready() -> None:
     description="Отправить панель создания тикетов.",
     guild=discord.Object(id=GUILD_ID),
 )
+@app_commands.default_permissions(administrator=True)
 @app_commands.checks.has_permissions(administrator=True)
 async def ticket_panel(interaction: discord.Interaction) -> None:
+    if not interaction.channel or not isinstance(interaction.channel, discord.abc.Messageable):
+        await interaction.response.send_message(
+            "Панель можно отправить только в текстовый канал сервера.",
+            ephemeral=True,
+        )
+        return
+
     embed = discord.Embed(
         title="Поддержка",
         description="Нажми кнопку ниже, чтобы создать приватный тикет для связи с поддержкой.",
         color=discord.Color.blurple(),
     )
-    await interaction.response.send_message(embed=embed, view=TicketCreateView())
+    await interaction.channel.send(embed=embed, view=TicketCreateView())
+    await interaction.response.send_message(
+        "Панель тикетов отправлена.",
+        ephemeral=True,
+    )
 
 
 @ticket_panel.error
