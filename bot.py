@@ -22,6 +22,9 @@ logging.basicConfig(
 logger = logging.getLogger("tickets-bot")
 
 BOT_VERSION = "2026-05-10-remnawave-active"
+EMBED_GRADIENT_START = 0xC98533
+EMBED_GRADIENT_END = 0xF6E4C8
+EMBED_ACCENT_COLOR = discord.Color(EMBED_GRADIENT_START)
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
 SUPPORT_ROLE_ID = int(os.getenv("SUPPORT_ROLE_ID", "0"))
@@ -504,7 +507,7 @@ def build_remnawave_panel_embed(
 
     embed = discord.Embed(
         title="🌼 Онлайн серверов",
-        color=discord.Color.teal(),
+        color=EMBED_ACCENT_COLOR,
         timestamp=discord.utils.utcnow(),
     )
     embed.add_field(name="Сейчас онлайн", value=f"**{format_stat(online_now)}**", inline=True)
@@ -574,7 +577,7 @@ def build_subscription_contacts_embed() -> discord.Embed:
         description=(
             "Оформи подписку удобным способом и управляй доступом в личном кабинете."
         ),
-        color=discord.Color.gold(),
+        color=EMBED_ACCENT_COLOR,
     )
     embed.add_field(
         name="Telegram-бот",
@@ -637,7 +640,7 @@ def build_remnawave_embed(
 
     embed = discord.Embed(
         title="Remnawave: активные пользователи",
-        color=discord.Color.teal(),
+        color=EMBED_ACCENT_COLOR,
     )
     embed.add_field(name="Онлайн сейчас", value=format_stat(online_now), inline=True)
     embed.add_field(name="Активные", value=format_stat(active_users), inline=True)
@@ -756,7 +759,7 @@ class TicketCreateView(discord.ui.View):
                 f"{interaction.user.mention}, опиши свою проблему как можно подробнее.\n"
                 "Команда поддержки скоро ответит."
             ),
-            color=discord.Color.green(),
+            color=EMBED_ACCENT_COLOR,
         )
         embed.set_footer(text="Закрыть тикет можно кнопкой ниже.")
 
@@ -986,7 +989,7 @@ async def ticket_panel(interaction: discord.Interaction) -> None:
     embed = discord.Embed(
         title="Поддержка",
         description="Нажми кнопку ниже, чтобы создать приватный тикет для связи с поддержкой.",
-        color=discord.Color.blurple(),
+        color=EMBED_ACCENT_COLOR,
     )
     await interaction.channel.send(embed=embed, view=TicketCreateView())
     await interaction.response.send_message(
