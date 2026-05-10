@@ -35,6 +35,14 @@ TICKET_CATEGORY_ID=id_категории_тикетов_или_оставь_пу
 docker compose up --build -d
 ```
 
+Если в логах запускается старая версия бота, пересобери образ без кэша:
+
+```bash
+docker compose down
+docker compose build --no-cache bot
+docker compose up -d --force-recreate bot
+```
+
 5. Посмотреть логи:
 
 ```bash
@@ -94,10 +102,17 @@ python bot.py
 
 ## Права бота
 
-Боту нужны права:
+Боту нужны права на сервере, а если указан `TICKET_CATEGORY_ID`, то и в этой категории:
 
 - `Manage Channels`;
+- `Manage Roles` не нужен;
+- `View Channels`;
 - `Send Messages`;
 - `Embed Links`;
 - `Read Message History`;
-- `View Channels`.
+
+Если Discord пишет `Missing Permissions`, проверь:
+
+- роль бота находится выше ролей, с которыми он должен работать;
+- в категории тикетов нет запрета на `Manage Channels` для роли бота;
+- при приглашении бота были выданы нужные permissions.

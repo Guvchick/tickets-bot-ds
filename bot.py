@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+BOT_VERSION = "2026-05-10-slash-commands"
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
 SUPPORT_ROLE_ID = int(os.getenv("SUPPORT_ROLE_ID", "0"))
@@ -31,6 +32,17 @@ def get_ticket_category(guild: discord.Guild) -> Optional[discord.CategoryChanne
         return category
 
     return None
+
+
+def bot_can_manage_channels(guild: discord.Guild, category: Optional[discord.CategoryChannel]) -> bool:
+    bot_member = guild.me
+    if not bot_member:
+        return False
+
+    if category:
+        return category.permissions_for(bot_member).manage_channels
+
+    return bot_member.guild_permissions.manage_channels
 
 
 async def find_existing_ticket(guild: discord.Guild, user: discord.Member) -> Optional[discord.TextChannel]:
@@ -72,6 +84,17 @@ class TicketCreateView(discord.ui.View):
             )
             return
 
+        category = get_ticket_category(interaction.guild)
+        if not bot_can_manage_channels(interaction.guild, category):
+            await interaction.response.send_message(
+                (
+                    "Не могу создать тикет: у бота нет права `Manage Channels`"
+                    " на сервере или в категории тикетов."
+                ),
+                ephemeral=True,
+            )
+            return
+
         support_role = interaction.guild.get_role(SUPPORT_ROLE_ID)
         overwrites = {
             interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False),
@@ -80,13 +103,15 @@ class TicketCreateView(discord.ui.View):
                 send_messages=True,
                 read_message_history=True,
             ),
-            interaction.guild.me: discord.PermissionOverwrite(
+        }
+
+        if interaction.guild.me:
+            overwrites[interaction.guild.me] = discord.PermissionOverwrite(
                 view_channel=True,
                 send_messages=True,
                 manage_channels=True,
                 read_message_history=True,
-            ),
-        }
+            )
 
         if support_role:
             overwrites[support_role] = discord.PermissionOverwrite(
@@ -97,14 +122,24 @@ class TicketCreateView(discord.ui.View):
             )
 
         ticket_name = f"ticket-{interaction.user.name}".lower().replace(" ", "-")[:90]
-        category = get_ticket_category(interaction.guild)
-        channel = await interaction.guild.create_text_channel(
-            name=ticket_name,
-            category=category,
-            overwrites=overwrites,
-            topic=f"ticket_owner:{interaction.user.id}",
-            reason=f"Ticket created by {interaction.user}",
-        )
+        try:
+            channel = await interaction.guild.create_text_channel(
+                name=ticket_name,
+                category=category,
+                overwrites=overwrites,
+                topic=f"ticket_owner:{interaction.user.id}",
+                reason=f"Ticket created by {interaction.user}",
+            )
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                (
+                    "Discord запретил создать канал тикета. Проверь, что у роли бота есть"
+                    " `Manage Channels`, `View Channels`, `Send Messages`, `Embed Links`"
+                    " и что категория тикетов не запрещает эти права."
+                ),
+                ephemeral=True,
+            )
+            return
 
         embed = discord.Embed(
             title="Тикет поддержки",
@@ -163,6 +198,8 @@ class TicketCloseView(discord.ui.View):
 
 @bot.event
 async def setup_hook() -> None:
+    print(f"Starting ticket bot version {BOT_VERSION}")
+
     bot.add_view(TicketCreateView())
     bot.add_view(TicketCloseView())
 
