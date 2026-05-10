@@ -4,7 +4,7 @@ Python-бот для Discord, который создает приватные �
 
 ## Возможности
 
-- команда `!ticket-panel` создает панель поддержки;
+- slash-команда `/ticket-panel` создает панель поддержки;
 - пользователь нажимает кнопку и получает приватный канал тикета;
 - поддержку автоматически пингует роль из `SUPPORT_ROLE_ID`;
 - у пользователя может быть только один открытый тикет;
@@ -25,13 +25,9 @@ DISCORD_TOKEN=токен_бота
 GUILD_ID=id_сервера
 SUPPORT_ROLE_ID=id_роли_поддержки
 TICKET_CATEGORY_ID=id_категории_тикетов_или_оставь_пустым
-COMMAND_PREFIX=!
 ```
 
-3. В Discord Developer Portal включи для бота:
-
-- `SERVER MEMBERS INTENT`;
-- `MESSAGE CONTENT INTENT`.
+3. Privileged intents в Discord Developer Portal включать не нужно.
 
 4. Собери и запусти бота:
 
@@ -54,7 +50,7 @@ docker compose down
 7. На сервере напиши команду:
 
 ```text
-!ticket-panel
+/ticket-panel
 ```
 
 ## Локальная установка без Docker
@@ -80,13 +76,9 @@ DISCORD_TOKEN=токен_бота
 GUILD_ID=id_сервера
 SUPPORT_ROLE_ID=id_роли_поддержки
 TICKET_CATEGORY_ID=id_категории_тикетов_или_оставь_пустым
-COMMAND_PREFIX=!
 ```
 
-4. В Discord Developer Portal включи для бота:
-
-- `SERVER MEMBERS INTENT`;
-- `MESSAGE CONTENT INTENT`.
+4. Privileged intents в Discord Developer Portal включать не нужно.
 
 5. Запусти бота:
 
@@ -97,7 +89,7 @@ python bot.py
 6. На сервере напиши команду:
 
 ```text
-!ticket-panel
+/ticket-panel
 ```
 
 ## Права бота

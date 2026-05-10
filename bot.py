@@ -3,6 +3,7 @@ import os
 from typing import Optional
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
 
@@ -13,15 +14,12 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
 SUPPORT_ROLE_ID = int(os.getenv("SUPPORT_ROLE_ID", "0"))
 TICKET_CATEGORY_ID = os.getenv("TICKET_CATEGORY_ID")
-COMMAND_PREFIX = os.getenv("COMMAND_PREFIX", "!")
 
 
 intents = discord.Intents.default()
 intents.guilds = True
-intents.members = True
-intents.message_content = True
 
-bot = commands.Bot(command_prefix=COMMAND_PREFIX, intents=intents)
+bot = commands.Bot(command_prefix=commands.when_mentioned, intents=intents)
 
 
 def get_ticket_category(guild: discord.Guild) -> Optional[discord.CategoryChannel]:
@@ -164,27 +162,46 @@ class TicketCloseView(discord.ui.View):
 
 
 @bot.event
-async def on_ready() -> None:
+async def setup_hook() -> None:
     bot.add_view(TicketCreateView())
     bot.add_view(TicketCloseView())
+
+    guild = discord.Object(id=GUILD_ID)
+    bot.tree.copy_global_to(guild=guild)
+    synced_commands = await bot.tree.sync(guild=guild)
+    print(f"Synced {len(synced_commands)} slash command(s) for guild {GUILD_ID}")
+
+
+@bot.event
+async def on_ready() -> None:
     print(f"Logged in as {bot.user} ({bot.user.id})")
 
 
-@bot.command(name="ticket-panel")
-@commands.has_permissions(administrator=True)
-async def ticket_panel(ctx: commands.Context) -> None:
+@bot.tree.command(
+    name="ticket-panel",
+    description="Отправить панель создания тикетов.",
+    guild=discord.Object(id=GUILD_ID),
+)
+@app_commands.checks.has_permissions(administrator=True)
+async def ticket_panel(interaction: discord.Interaction) -> None:
     embed = discord.Embed(
         title="Поддержка",
         description="Нажми кнопку ниже, чтобы создать приватный тикет для связи с поддержкой.",
         color=discord.Color.blurple(),
     )
-    await ctx.send(embed=embed, view=TicketCreateView())
+    await interaction.response.send_message(embed=embed, view=TicketCreateView())
 
 
 @ticket_panel.error
-async def ticket_panel_error(ctx: commands.Context, error: commands.CommandError) -> None:
-    if isinstance(error, commands.MissingPermissions):
-        await ctx.reply("Эту команду может использовать только администратор.", mention_author=False)
+async def ticket_panel_error(
+    interaction: discord.Interaction,
+    error: app_commands.AppCommandError,
+) -> None:
+    if isinstance(error, app_commands.MissingPermissions):
+        await interaction.response.send_message(
+            "Эту команду может использовать только администратор.",
+            ephemeral=True,
+        )
         return
 
     raise error
